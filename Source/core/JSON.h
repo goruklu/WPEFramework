@@ -141,7 +141,14 @@ namespace Core {
 
             class EXTERNAL Deserializer {
             private:
+                static constexpr uint32_t EnterFoundBit = 0x01;
+                static constexpr uint32_t SquareBracketFoundBit = 0x02;
+                static constexpr uint32_t DelimeterFoundBit = 0x03;
+                static constexpr uint32_t CommaFoundBit = 0x04;
+                static constexpr char* WhiteSpaces = " \n\r\t";
+            private:
                 typedef enum {
+                    STATE_NONE,
                     STATE_OPEN,
                     STATE_LABEL,
                     STATE_DELIMITER,
@@ -150,8 +157,8 @@ namespace Core {
                     STATE_SKIP,
                     STATE_START,
                     STATE_PREFIX,
-                    STATE_HANDLED
-
+                    STATE_HANDLED,
+                    STATE_KEY,
                 } State;
 
                 typedef enum {
@@ -203,44 +210,11 @@ namespace Core {
                 }
 
                 uint16_t Deserialize(const uint8_t stream[], const uint16_t maxLength);
+                bool Deserialize(Core::JSON::IElement* parentElement, const uint8_t stream[], const uint16_t maxLength, uint16_t& offset);
 
             private:
                 virtual IElement* Element(const string& identifer) = 0;
 
-            private:
-                IElement* _handling;
-                string _handlingName;
-                std::list<JSON::IIterator*> _handleStack;
-                State _state;
-                uint16_t _offset;
-                uint16_t _bufferUsed;
-                Quoted _quoted;
-                uint16_t _levelSkip;
-                Core::CriticalSection _adminLock;
-                std::string _buffer;
-            };
-
-            class EXTERNAL Validator {
-            private:
-                static constexpr uint32_t EnterFoundBit = 0x01;
-                static constexpr uint32_t SquareBracketFoundBit = 0x02;
-                static constexpr uint32_t DelimeterFoundBit = 0x03;
-                static constexpr uint32_t CommaFoundBit = 0x04;
-            private:
-                typedef enum {
-                    STATE_NONE,
-                    STATE_KEY,
-                    STATE_VALUE,
-                } State;
-            public:
-                Validator()
-                {
-                }
-                ~Validator()
-                {
-                }
-                bool Validate(const uint8_t stream[], const uint16_t maxLength, uint16_t& offset);
-            private:
                 inline bool IsDigit(const string str)
                 {
                     return (str.find_first_not_of( "0123456789" ) == string::npos);
@@ -254,12 +228,12 @@ namespace Core {
                     return (strcasecmp(str.c_str(), "null") == 0);
                 }
 
-                inline std::string Trim(std::string& str)
+                inline std::string Trim(std::string& str, std::string substr)
                 {
-                    size_t start = str.find_first_not_of(" \n\t\r");
+                    size_t start = str.find_first_not_of(substr);
                     str.assign((start == std::string::npos) ? "" : str.substr(start));
 
-                    size_t end = str.find_last_not_of(" \n\t\r");
+                    size_t end = str.find_last_not_of(substr);
                     return (end == std::string::npos) ? "" : str.substr(0, end + 1);
                 }
                 inline bool EnterScope(char ch)
@@ -333,16 +307,19 @@ namespace Core {
                 }
                 bool IsValidKey(std:: string& key)
                 {
-                    key = Trim(key);
+                    key = Trim(key, WhiteSpaces);
                     bool isValid = false;
                     if (key.empty() != true) {
                         isValid = ((key.at(0) == '\"') && (key.length() > 1) && (key.at(key.length() - 1) == '\"'));
+                        if (isValid == true) {
+                            key = Trim(key, "\"");
+                        }
                     }
                     return isValid;
                 }
                 bool IsValidData(std::string& value)
                 {
-                    value = Trim(value);
+                    value = Trim(value, WhiteSpaces);
                     bool isValid = false;
                     if (value.empty() != true) {
                         if ((IsDigit(value) == true) || (IsBool(value) == true) || (IsNull(value) == true)) {
@@ -364,7 +341,7 @@ namespace Core {
                 }
                 bool IsCompleteData(std::string& value)
                 {
-                   value = Trim(value);
+                   value = Trim(value, WhiteSpaces);
                    bool isComplete = true;
                    if (value.empty() != true) {
                        if (value.at(0) == '\"') {
@@ -375,17 +352,19 @@ namespace Core {
                    }
                    return isComplete;
                 }
+
+            private:
+                IElement* _handling;
+                string _handlingName;
+                std::list<JSON::IIterator*> _handleStack;
+                State _state;
+                uint16_t _offset;
+                uint16_t _bufferUsed;
+                Quoted _quoted;
+                uint16_t _levelSkip;
+                Core::CriticalSection _adminLock;
+                std::string _buffer;
             };
-
-            bool IsValidString(const string& text)
-            {
-                Validator validator;
-                uint16_t offset = 0;
-
-                bool isValid = validator.Validate((const uint8_t*)text.c_str(), text.size(), offset);
-
-                return isValid;
-            }
 
             template <typename INSTANCEOBJECT>
             static void ToString(const INSTANCEOBJECT& realObject, string& text)
@@ -500,30 +479,6 @@ namespace Core {
                 return (Core::JSON::IElement::FromString(text, *this));
             }
 
-            bool IsValidFile(Core::File& fileObject)
-            {
-               bool isValid = false;
-               if (fileObject.IsOpen()) {
-                   fileObject.Position(false, 0); // Reset to file start.
-
-                   uint16_t readBytes = static_cast<uint16_t>(~0);
-                   uint8_t buffer[1024];
-                   string fileData;
-
-                   do {
-                       readBytes = static_cast<uint16_t>(fileObject.Read(buffer, sizeof(buffer)));
-                       fileData.append((const char*)buffer, (size_t)readBytes);
-                   } while (readBytes != 0);
-
-                   if (fileData.empty() != true) {
-                       uint16_t offset = 0;
-                       Validator validator;
-                       isValid = validator.Validate((const uint8_t*)fileData.c_str(), fileData.size(), offset);
-                   }
-               }
-               return isValid;
-            }
-
             template <typename INSTANCEOBJECT>
             static bool ToFile(Core::File& fileObject, const INSTANCEOBJECT& realObject)
             {
@@ -571,18 +526,13 @@ namespace Core {
             template <typename INSTANCEOBJECT>
             static bool FromFile(Core::File& fileObject, INSTANCEOBJECT& realObject)
             {
-                bool ready = false;
-
+                bool isValid = false;
                 if (fileObject.IsOpen() == true) {
-                    uint16_t unusedBytes = 0;
-                    uint16_t readBytes = static_cast<uint16_t>(~0);
 
                     class DeserializerImpl : public Deserializer {
                     public:
-                        DeserializerImpl(bool& ready)
+                        DeserializerImpl()
                             : INSTANCEOBJECT::Deserializer()
-                            , _element(nullptr)
-                            , _ready(ready)
                         {
                         }
                         ~DeserializerImpl()
@@ -590,55 +540,34 @@ namespace Core {
                         }
 
                     public:
-                        inline void SetElement(Core::JSON::IElement* element)
-                        {
-                            ASSERT(_element == nullptr);
-                            _element = element;
-                        }
                         virtual Core::JSON::IElement* Element(const string& identifier)
                         {
-                            DEBUG_VARIABLE(identifier);
-                            ASSERT(identifier.empty() == true);
-                            return (_element);
+                            return nullptr;
                         }
                         virtual void Deserialized(Core::JSON::IElement& element)
                         {
-                            DEBUG_VARIABLE(element);
-                            ASSERT(&element == _element);
-                            _element = nullptr;
-                            _ready = true;
                         }
-
-                    private:
-                        Core::JSON::IElement* _element;
-                        bool& _ready;
-                    } deserializer(ready);
+                    } deserializer;
 
                     realObject.Clear();
+                    fileObject.Position(false, 0); // Reset to file start.
 
-                    deserializer.SetElement(&realObject);
+                    uint16_t readBytes = static_cast<uint16_t>(~0);
+                    uint8_t buffer[1024];
+                    string fileData;
 
-                    while ((ready == false) && (unusedBytes == 0) && (readBytes != 0)) {
-                        uint8_t buffer[1024];
-
+                    do {
                         readBytes = static_cast<uint16_t>(fileObject.Read(buffer, sizeof(buffer)));
+                        fileData.append((const char*)buffer, (size_t)readBytes);
+                    } while (readBytes != 0);
 
-                        if (readBytes != 0) {
-                            // Deserialize object
-                            uint16_t usedBytes = deserializer.Deserialize(buffer, readBytes);
-
-                            unusedBytes = (readBytes - usedBytes);
-                        }
-                    }
-
-                    if (unusedBytes != 0) {
-                        fileObject.Position(true, -unusedBytes);
+                    if (fileData.empty() != true) {
+                        uint16_t offset = 0;
+                        isValid = deserializer.Deserialize(&realObject, (const uint8_t*)fileData.c_str(), fileData.size(), offset);
                     }
                 }
-
-                return (ready == true);
+                return (isValid == true);
             }
-
             bool ToFile(Core::File& fileObject) const
             {
                 return (Core::JSON::IElement::ToFile(fileObject, *this));
@@ -1335,7 +1264,6 @@ namespace Core {
                     offset = 0;
                     _scopeCount |= (ContainsNull(_value) ? None : SetBit);
                 }
-
                 return (result);
             }
 

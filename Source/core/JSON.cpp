@@ -287,7 +287,7 @@ namespace Core {
                                 _state = STATE_LABEL;
                             } else {
                                 elementList->AddElement();
-    
+
                                 // Check if the new element is a container..
                                 if (elementList->Element()->Type() == PARSE_CONTAINER) {
                                     current = elementList->Element()->ElementIterator();
@@ -536,7 +536,8 @@ namespace Core {
 
             return (result);
         }
-        bool IElement::Validator::Validate(const uint8_t stream[], const uint16_t maxLength, uint16_t& offset)
+
+        bool IElement::Deserializer::Deserialize(Core::JSON::IElement* parentElement, const uint8_t stream[], const uint16_t maxLength, uint16_t& offset)
         {
             ASSERT(maxLength > 0);
 
@@ -547,15 +548,34 @@ namespace Core {
             uint16_t scopeCount = 0;
 
             State state = STATE_NONE;
-            uint16_t startOffset = offset;
+            Core::JSON::IElement* childElement = nullptr;
+            IIterator* elementIterator = nullptr;
 
+            if (parentElement != nullptr ) {
+                elementIterator = parentElement->ElementIterator();
+            }
+            uint16_t startOffset = offset;
             for (;  ((offset < maxLength) && (finished == false)); offset++) {
                 if (EnterScope(stream[offset])) {
-                    if (IsEnterSet(scopeBit)) { //Parse sub string
-                        result = Validate(stream, maxLength, offset);
+                    if (IsEnterSet(scopeBit)) {
+                        Core::JSON::IElement* element = nullptr;
+                        uint16_t currentOffset = offset;
+                        if (childElement != nullptr) {
+                            if (childElement->Type() == PARSE_CONTAINER) {
+                                element = childElement;
+                            }
+                        }
+                        result = Deserialize(element, stream, maxLength, offset);
                         if (result != true) {
                             finished = true;
                             break;
+                        }
+                        if (childElement != nullptr) {
+                            if (childElement->Type() == PARSE_DIRECT) {
+                                string value;
+                                value.assign((const char*)stream + currentOffset, offset - currentOffset);
+                                childElement->DirectParser()->Deserialize((const char*)stream + currentOffset, offset - currentOffset, currentOffset);
+                            }
                         }
                         offset--; //Just point to the end position of previous parsing
                     } else {
@@ -608,6 +628,11 @@ namespace Core {
                                 finished = true;
                                 break;
                             }
+                            if (elementIterator != nullptr) {
+                                if (static_cast<ILabelIterator*>(elementIterator)->Find(key.c_str()) == true) {
+                                    childElement = static_cast<ILabelIterator*>(elementIterator)->Element();
+                                }
+                            }
                             state = STATE_VALUE;
                             SetDelimeterBit(scopeBit, scopeCount);
                             if (IsCommaSet(scopeBit)) {
@@ -639,6 +664,17 @@ namespace Core {
                             }
                             state = STATE_NONE;
                             result = true;
+                            if (childElement != nullptr) {
+                                if (childElement->Type() == PARSE_BUFFERED) {
+                                    childElement->BufferParser()->Deserialize(value);
+                                } else if (childElement->Type() == PARSE_DIRECT) {
+                                    uint16_t offset = 0;
+                                    childElement->DirectParser()->Deserialize(value.c_str(), value.length(), offset);
+                                } else {
+                                    result = false;
+                                }
+                            }
+                            value.clear();
                         } else {
                             value += stream[offset];
                             offset++;
