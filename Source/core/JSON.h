@@ -38,7 +38,7 @@ namespace Core {
 
             // If this should be serialized/deserialized, it is indicated by a MinSize > 0)
             virtual uint16_t Serialize(char Stream[], const uint16_t MaxLength, uint16_t& offset) const = 0;
-            virtual uint16_t Deserialize(const char Stream[], const uint16_t MaxLength, uint16_t& offset) = 0;
+            virtual uint16_t Deserialize(const char Stream[], const uint16_t MaxLength, uint16_t& offset, bool direct = false) = 0;
         };
 
         struct EXTERNAL IBuffered {
@@ -333,6 +333,7 @@ namespace Core {
                                 }
                             }
                             if (count == 2) {
+                                value = Trim(value, "\"");
                                 isValid = true;
                             }
                         }
@@ -407,7 +408,7 @@ namespace Core {
                     text += string(reinterpret_cast<char*>(&buffer[0]), loaded);
                 }
             }
-
+#if 0
             template <typename INSTANCEOBJECT>
             static bool FromString(const string& text, INSTANCEOBJECT& realObject)
             {
@@ -469,7 +470,42 @@ namespace Core {
 
                 return (ready == true);
             }
+#else
+            template <typename INSTANCEOBJECT>
+            static bool FromString(const string& text, INSTANCEOBJECT& realObject)
+            {
+                bool isValid = false;
 
+                    class DeserializerImpl : public Deserializer {
+                    public:
+                        DeserializerImpl()
+                            : INSTANCEOBJECT::Deserializer()
+                        {
+                        }
+                        ~DeserializerImpl()
+                        {
+                        }
+
+                    public:
+                        virtual Core::JSON::IElement* Element(const string& identifier)
+                        {
+                            return nullptr;
+                        }
+                        virtual void Deserialized(Core::JSON::IElement& element)
+                        {
+                        }
+                    } deserializer;
+
+                    realObject.Clear();
+
+                    if (text.empty() != true) {
+                        uint16_t offset = 0;
+                        isValid = deserializer.Deserialize(&realObject, (const uint8_t*)text.c_str(), text.size(), offset);
+                    }
+
+                return (isValid == true);
+            }
+ #endif
             void ToString(string& text) const
             {
                 Core::JSON::IElement::ToString(*this, text);
@@ -1214,55 +1250,62 @@ namespace Core {
                 return (result);
             }
 
-            virtual uint16_t Deserialize(const char stream[], const uint16_t maxLength, uint16_t& offset) override
+            virtual uint16_t Deserialize(const char stream[], const uint16_t maxLength, uint16_t& offset, bool direct) override
             {
-                bool finished = false;
-                uint16_t result = 0;
                 ASSERT(maxLength > 0);
+                uint16_t result = 0;
 
-                if (offset == 0) {
-                    // We got a quote, start recording..
+                if (direct == true) {
                     _value.clear();
-                    _scopeCount &= QuotedSerializeBit;
-                    if (stream[result] == '\"') {
-                        result++;
-                        _scopeCount |= (QuoteFoundBit | 1);
+                    _value.assign(stream, maxLength);
+                    _scopeCount |= SetBit;
+                    result = maxLength;
+                } else {
+                    bool finished = false;
+                    if (offset == 0) {
+                        // We got a quote, start recording..
+                        _value.clear();
+                        _scopeCount &= QuotedSerializeBit;
+                        if (stream[result] == '\"') {
+                            result++;
+                            _scopeCount |= (QuoteFoundBit | 1);
+                        }
                     }
-                }
 
-                bool escapedSequence = MatchLastCharacter(_value, '\\');
+                    bool escapedSequence = MatchLastCharacter(_value, '\\');
 
-                // Might be that the last character we added was a
-                while ((result < maxLength) && (finished == false)) {
-                    if (escapedSequence == false) {
-                        if (EnterScope(stream[result])) {
-                            _scopeCount++;
-                        } else if (ExitScope(stream[result]) || EndOfQuotedString(stream[result])) {
-                            _scopeCount--;
+                    // Might be that the last character we added was a
+                    while ((result < maxLength) && (finished == false)) {
+                        if (escapedSequence == false) {
+                            if (EnterScope(stream[result])) {
+                                _scopeCount++;
+                            } else if (ExitScope(stream[result]) || EndOfQuotedString(stream[result])) {
+                                _scopeCount--;
+                            }
+
+                            finished = (((_scopeCount & ScopeMask) == 0) && ((stream[result] == '\"') || (stream[result] == '}') || (stream[result] == ']') || (stream[result] == ',') || (stream[result] == ' ') || (stream[result] == '\t')));
                         }
 
-                        finished = (((_scopeCount & ScopeMask) == 0) && ((stream[result] == '\"') || (stream[result] == '}') || (stream[result] == ']') || (stream[result] == ',') || (stream[result] == ' ') || (stream[result] == '\t')));
+                        if ((finished == false) || ExitScope(stream[result])) {
+                            escapedSequence = (stream[result] == '\\');
+                            // Write the amount we possibly can..
+                            _value += stream[result];
+                            // Move on to the next position
+                            result++;
+                        } else if (stream[result] != ',') {
+                            result++;
+                        }
                     }
 
-                    if ((finished == false) || ExitScope(stream[result])) {
-                        escapedSequence = (stream[result] == '\\');
-                        // Write the amount we possibly can..
-                        _value += stream[result];
-                        // Move on to the next position
-                        result++;
-                    } else if (stream[result] != ',') {
-                        result++;
+                    if ((result < maxLength) && (finished == false) && OutsideQuotedString())
+                        finished = true;
+
+                    if (finished == false) {
+                        offset =static_cast<uint16_t>( _value.length() + (((_scopeCount & ScopeMask) != 0) ? 1 : 0));
+                    } else {
+                        offset = 0;
+                        _scopeCount |= (ContainsNull(_value) ? None : SetBit);
                     }
-                }
-
-                if ((result < maxLength) && (finished == false) && OutsideQuotedString())
-                    finished = true;
-
-                if (finished == false) {
-                    offset =static_cast<uint16_t>( _value.length() + (((_scopeCount & ScopeMask) != 0) ? 1 : 0));
-                } else {
-                    offset = 0;
-                    _scopeCount |= (ContainsNull(_value) ? None : SetBit);
                 }
                 return (result);
             }

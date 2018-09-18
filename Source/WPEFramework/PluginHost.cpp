@@ -168,6 +168,7 @@ namespace PluginHost {
                     Plugin::Config pluginConfig;
                     bool isValid = pluginConfig.FromFile(file);
                     file.Close();
+
                     if (isValid == true) {
                         if ((pluginConfig.ClassName.Value().empty() == true) || (pluginConfig.Locator.Value().empty() == true)) {
                             SYSLOG(PluginHost::Startup, (_T("Plugin config file [%s] does not contain classname or locator."), file.Name().c_str()));
@@ -190,8 +191,8 @@ namespace PluginHost {
                             }
                         }
                     } else {
-
-                        SYSLOG(PluginHost::Startup, (_T("Plugin config file [%s] is not a valid json file, will not activate plugin"), file.Name().c_str()));
+                        pluginConfig.Configuration = "null";
+                        SYSLOG(PluginHost::Startup, (_T("Plugin config file [%s] is not a valid json file, will not activate plugin properly"), file.Name().c_str()));
                     }
                 }
             }
