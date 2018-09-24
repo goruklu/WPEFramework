@@ -537,189 +537,240 @@ namespace Core {
             return (result);
         }
 
-        bool IElement::Deserializer::Deserialize(Core::JSON::IElement* parentElement, const uint8_t stream[], const uint16_t maxLength, uint16_t& offset)
+        IElement::Deserializer::Result IElement::Deserializer::Deserialize(Core::JSON::IElement* parentElement, const uint8_t stream[], const uint16_t maxLength, uint16_t& offset, uint16_t iteration)
         {
             ASSERT(maxLength > 0);
 
             bool finished = false;
-            bool result = false;
+            IterationStatus* iterationStatus;
+            std::map<uint16_t, IterationStatus*>::iterator it;
+            it = _iterationMap.find(iteration);
 
-            uint16_t scopeBit = 0;
-            uint16_t scopeCount = 0;
+            if (it == _iterationMap.end()) {
+                iterationStatus = new IterationStatus();
 
-            State state = STATE_NONE;
-            Core::JSON::IElement* childElement = nullptr;
-            IIterator* elementIterator = nullptr;
+                if (parentElement != nullptr ) {
+                    iterationStatus->elementIterator = parentElement->ElementIterator();
+                    iterationStatus->childElement = parentElement;
+                }
 
-            if (parentElement != nullptr ) {
-                elementIterator = parentElement->ElementIterator();
-                childElement = parentElement;
+                iterationStatus->result = RESULT_INPROGRESS;
+                _iterationMap.insert(std::make_pair(iteration, iterationStatus));
+            } else {
+                iterationStatus = it->second;
             }
+
             uint16_t startOffset = offset;
             for (;  ((offset < maxLength) && (finished == false)); offset++) {
-                if (EnterScope(stream[offset])) {
-                    if (IsEnterSet(scopeBit)) {
+
+                if (EnterScope(stream[offset]) || (iterationStatus->state == STATE_CONTAINER)) {
+                    if (IsEnterSet(iterationStatus->scopeBit)) {
+
                         Core::JSON::IElement* element = nullptr;
                         uint16_t currentOffset = offset;
-                        if (childElement != nullptr) {
-                            if (childElement->Type() == PARSE_CONTAINER) {
-                                if (/*IsSquareBracketSet(scopeBit) ||*/ (stream[offset] == '[')) {
-                                    element = childElement;
+                        if (iterationStatus->childElement != nullptr) {
+                            if (iterationStatus->childElement->Type() == PARSE_CONTAINER) {
+
+                                if (stream[offset] == '[') {
+                                    element = iterationStatus->childElement;
                                 } else {
-                                    IArrayIterator* elementList = dynamic_cast<IArrayIterator*>(childElement->ElementIterator());
+
+                                    IArrayIterator* elementList = dynamic_cast<IArrayIterator*>(iterationStatus->childElement->ElementIterator());
                                     if (elementList != nullptr) {
-                                        elementList->AddElement();
+                                        if (iterationStatus->state != STATE_CONTAINER) {
+                                            elementList->AddElement();
+                                        }
+
                                         element = elementList->Element();
                                     } else {
-                                       element = childElement;
+                                       element = iterationStatus->childElement;
                                     }
                                 }
                             }
                         }
-                        result = Deserialize(element, stream, maxLength, offset);
-                        if (result != true) {
+
+                        if (iterationStatus->state != STATE_CONTAINER) {
+                            iterationStatus->state = STATE_CONTAINER; // To maintain details for next level parsing
+                        }
+
+                        iterationStatus->result = Deserialize(element, stream, maxLength, offset, iteration + 1);
+                        if (iterationStatus->result == RESULT_FAILURE) {
                             finished = true;
                             break;
                         }
-                        if (childElement != nullptr) {
-                            if (childElement->Type() == PARSE_DIRECT) {
-                                childElement->DirectParser()->Deserialize((const char*)stream + currentOffset, offset - currentOffset, currentOffset, true);
+
+                        if (iterationStatus->childElement != nullptr) {
+                            if (iterationStatus->childElement->Type() == PARSE_DIRECT) {
+
+                                uint16_t size = ((offset > maxLength) ? (maxLength - currentOffset) : (offset - currentOffset));
+                                iterationStatus->value.append((const char*)stream + currentOffset, size);
+                                if (iterationStatus->result == RESULT_SUCCESS) {
+                                    iterationStatus->childElement->DirectParser()->Deserialize(iterationStatus->value.c_str(), iterationStatus->value.length(), currentOffset, true);
+                                    iterationStatus->value.clear();
+                                }
                             }
+                        }
+
+                        if (iterationStatus->result == RESULT_SUCCESS) {
+                            iterationStatus->state = STATE_NONE;
                         }
                         offset--; //Just point to the end position of previous parsing
                     } else {
-                        SetEnterBit(scopeBit, scopeCount);
+                        SetEnterBit(iterationStatus->scopeBit, iterationStatus->scopeCount);
                         if (stream[offset] == '[') {
-                            SetSquareBracketBit(scopeBit, scopeCount);
+                            SetSquareBracketBit(iterationStatus->scopeBit, iterationStatus->scopeCount);
                         }
                     }
-                    if (IsCommaSet(scopeBit)) {
-                        ResetCommaBit(scopeBit, scopeCount);
+
+                    if (IsCommaSet(iterationStatus->scopeBit)) {
+                        ResetCommaBit(iterationStatus->scopeBit, iterationStatus->scopeCount);
                     }
-                    if (IsDelimeterSet(scopeBit)) {
-                        ResetDelimeterBit(scopeBit, scopeCount);
+
+                    if (IsDelimeterSet(iterationStatus->scopeBit)) {
+                        ResetDelimeterBit(iterationStatus->scopeBit, iterationStatus->scopeCount);
                     }
                     continue;
                 } else if (ExitScope(stream[offset])) {
+
                     finished = true;
-                    if (IsSquareBracketSet(scopeBit) && (stream[offset] == ']')) {
-                        ResetSquareBracketBit(scopeBit, scopeCount);
+                    if (IsSquareBracketSet(iterationStatus->scopeBit)) {
+                        if (stream[offset] == ']') {
+                            ResetSquareBracketBit(iterationStatus->scopeBit, iterationStatus->scopeCount);
+                        } else {
+                            iterationStatus->result = RESULT_FAILURE;
+                            break;
+                        }
                     } else if (stream[offset] == ']') {
                         break;
                     }
-                    ResetEnterBit(scopeBit, scopeCount);
+
+                    ResetEnterBit(iterationStatus->scopeBit, iterationStatus->scopeCount);
                     continue;
                 } else if (WhiteSpace(stream[offset])) {
                     // Skip whiteSpace.
                     continue;
                 } else if (stream[offset] == ',') {
-                    if (result != true) { // Comma is occured before a valid data
+
+                    if ((iterationStatus->result == RESULT_INPROGRESS) && (iterationStatus->state == STATE_NONE)) { // Comma is occured before a valid data
+                        iterationStatus->result = RESULT_FAILURE;
                         finished = true;
                         break;
                     }
-                    SetCommaBit(scopeBit, scopeCount);
-                    state = STATE_NONE;
-                    result = false;
-                    continue;
+                    SetCommaBit(iterationStatus->scopeBit, iterationStatus->scopeCount);
+                    iterationStatus->result = RESULT_INPROGRESS;
                 } else {
-                    if (state == STATE_NONE) {
-                        if (IsSquareBracketSet(scopeBit)) {
-                            state = STATE_VALUE;
-                            IArrayIterator* elementList = dynamic_cast<IArrayIterator*>(elementIterator);
+                    if (iterationStatus->state == STATE_NONE) {
+                        if (IsSquareBracketSet(iterationStatus->scopeBit)) {
+
+                            iterationStatus->state = STATE_VALUE;
+                            IArrayIterator* elementList = dynamic_cast<IArrayIterator*>(iterationStatus->elementIterator);
                             if (elementList != nullptr) {
                                 elementList->AddElement();
-                                childElement = elementList->Element();
+                                iterationStatus->childElement = elementList->Element();
                             }
-                            if (IsCommaSet(scopeBit)) {
-                                ResetCommaBit(scopeBit, scopeCount);
+
+                            if (IsCommaSet(iterationStatus->scopeBit)) {
+                                ResetCommaBit(iterationStatus->scopeBit, iterationStatus->scopeCount);
                             }
                         } else {
-                            state = STATE_KEY;
+                            iterationStatus->state = STATE_KEY;
                         }
                     }
                 }
 
-                switch (state) {
+                switch (iterationStatus->state) {
                 case STATE_KEY: {
-                    string key;
-                    while ((offset < maxLength) && (state == STATE_KEY)) {
+                    while ((offset < maxLength) && (iterationStatus->state == STATE_KEY)) {
+
                         if (stream[offset] == ':') {
-                            if (IsValidKey(key) != true) {
+                            if (IsValidKey(iterationStatus->key) != true) {
                                 finished = true;
                                 break;
                             }
-                            if (elementIterator != nullptr) {
-                                if (static_cast<ILabelIterator*>(elementIterator)->Find(key.c_str()) == true) {
-                                    childElement = static_cast<ILabelIterator*>(elementIterator)->Element();
+
+                            if (iterationStatus->elementIterator != nullptr) {
+                                if (static_cast<ILabelIterator*>(iterationStatus->elementIterator)->Find(iterationStatus->key.c_str()) == true) {
+                                    iterationStatus->childElement = static_cast<ILabelIterator*>(iterationStatus->elementIterator)->Element();
                                 } else {
-                                    childElement = nullptr;
+                                    iterationStatus->childElement = nullptr;
                                 }
                             }
-                            state = STATE_VALUE;
-                            SetDelimeterBit(scopeBit, scopeCount);
-                            if (IsCommaSet(scopeBit)) {
-                                ResetCommaBit(scopeBit, scopeCount);
+
+                            iterationStatus->state = STATE_VALUE;
+                            SetDelimeterBit(iterationStatus->scopeBit, iterationStatus->scopeCount);
+                            if (IsCommaSet(iterationStatus->scopeBit)) {
+                                ResetCommaBit(iterationStatus->scopeBit, iterationStatus->scopeCount);
                             }
-                            key.clear();
+
+                            iterationStatus->key.clear();
                         } else {
-                            key += stream[offset];
+                            iterationStatus->key += stream[offset];
                             offset++;
                         }
                     }
                     break;
                 }
                 case STATE_VALUE: {
-                    string value;
-                    while ((offset < maxLength) && (state == STATE_VALUE)) {
-                        if (((stream[offset] == ',') && (IsCompleteData(value) == true)) || (ExitScope(stream[offset]))) {
-                            if (IsValidData(value) != true) {
+                    while ((offset < maxLength) && (iterationStatus->state == STATE_VALUE)) {
+
+                        if (((stream[offset] == ',') && (IsCompleteData(iterationStatus->value) == true)) || (ExitScope(stream[offset]))) {
+                            if (IsValidData(iterationStatus->value) != true) {
                                 finished = true;
+                                iterationStatus->result = RESULT_FAILURE;
                                 break;
                             }
+
                             if (stream[offset] == ',') {
-                                SetCommaBit(scopeBit, scopeCount);
-                                result = false; // Reset to indicate that we have to parse some more data.
+                                SetCommaBit(iterationStatus->scopeBit, iterationStatus->scopeCount);
+                                iterationStatus->result = RESULT_INPROGRESS; // Reset to indicate that we have to parse some more data.
                             } else {
                                 offset--;
-                                result = true; // At the end of bracket.
+                                iterationStatus->result = RESULT_SUCCESS; // At the end of bracket.
                             }
-                            if (IsDelimeterSet(scopeBit)) {
-                                ResetDelimeterBit(scopeBit, scopeCount);
+
+                            if (IsDelimeterSet(iterationStatus->scopeBit)) {
+                                ResetDelimeterBit(iterationStatus->scopeBit, iterationStatus->scopeCount);
                             }
-                            state = STATE_NONE;
-                            if (childElement != nullptr) {
-                                if (childElement->Type() == PARSE_BUFFERED) {
-                                    childElement->BufferParser()->Deserialize(value);
-                                } else if (childElement->Type() == PARSE_DIRECT) {
+
+                            iterationStatus->state = STATE_NONE;
+                            if (iterationStatus->childElement != nullptr) {
+                                if (iterationStatus->childElement->Type() == PARSE_BUFFERED) {
+                                    iterationStatus->childElement->BufferParser()->Deserialize(iterationStatus->value);
+                                } else if (iterationStatus->childElement->Type() == PARSE_DIRECT) {
                                     uint16_t offset = 0;
-                                    childElement->DirectParser()->Deserialize(value.c_str(), value.length(), offset, true);
+                                    iterationStatus->childElement->DirectParser()->Deserialize(iterationStatus->value.c_str(), iterationStatus->value.length(), offset, true);
                                 } else {
-                                    result = false;
+                                    iterationStatus->result = RESULT_FAILURE;
                                 }
                             }
-                            value.clear();
+                            iterationStatus->value.clear();
                         } else {
-                            value += stream[offset];
+                            iterationStatus->value += stream[offset];
                             offset++;
                         }
                     }
                     break;
                 }
                 case STATE_NONE:
+                    break; //Just skip
                 default:
                     ASSERT(FALSE);
                     break;
                 }
             }
 
-            if ((finished == true) && (scopeCount == 0)) {
-                result = true;
-            } else {
-                result = false;
+            Result result = iterationStatus->result;
+            if ((startOffset == 0) && (offset < maxLength) && (iteration == 1)) {
+                result = RESULT_FAILURE;
             }
 
-            if ((startOffset == 0) && (offset < maxLength))
-                result = false; //junk data after end of json string.
+            if ((finished == true) && (iterationStatus->result != RESULT_INPROGRESS)) {
+                if (iterationStatus->scopeCount == 0) {
+                    result = RESULT_SUCCESS;
+                }
+                _iterationMap.erase(iteration);
+                delete iterationStatus;
+            }
 
             return (result);
         }
