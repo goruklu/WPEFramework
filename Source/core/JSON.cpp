@@ -56,11 +56,17 @@ namespace Core {
                 while ((result < maxLength) && (_state != STATE_REPORT)) {
                     switch (_state) {
                     case STATE_PREFIX: {
-                        while ((result < maxLength) && (_prefix[_offset] != '\0')) {
-                            stream[result++] = _prefix[_offset++];
+                        if (_offset == 0) {
+                            stream[result++] = '\"';
+                            _offset++;
+                        }
+                        while ((result < maxLength) && (_prefix[_offset - 1] != '\0')) {
+                            stream[result++] = _prefix[_offset - 1];
+                            _offset++;
                         }
                         if (result < maxLength) {
                             if (_prefix[0] != '\0') {
+                                stream[result++] = '\"';
                                 stream[result++] = ':';
                             }
                             _state = STATE_OPEN;
@@ -96,6 +102,7 @@ namespace Core {
                         break;
                     }
                     case STATE_LABEL: {
+
                         if (_offset == 0) {
                             stream[result++] = '\"';
                             _offset++;
@@ -537,7 +544,7 @@ namespace Core {
             return (result);
         }
 
-        IElement::Deserializer::Result IElement::Deserializer::Deserialize(const uint8_t stream[], const uint16_t maxLength, uint16_t& offset)
+        bool IElement::Deserializer::Deserialize(const uint8_t stream[], const uint16_t maxLength, uint16_t& offset)
         {
             ASSERT(maxLength > 0);
 
@@ -562,12 +569,13 @@ namespace Core {
             } else {
                 containerLevelInfo = it->second;
             }
+            _result = containerLevelInfo->result;
 
             uint16_t startOffset = offset;
             for (;  ((offset < maxLength) && (finished == false)); offset++) {
 
-                if (EnterScope(stream[offset]) || (containerLevelInfo->state == STATE_CONTAINER)) {
-                    if (IsEnterSet(containerLevelInfo->scopeBit)) {
+                if (EnterScope(stream[offset]) || (containerLevelInfo->state == STATE_CONTAINER) ) {
+                    if (IsEnterSet(containerLevelInfo->scopeBit) || (containerLevelInfo->state == STATE_CONTAINER)) {
 
                         Core::JSON::IElement* element = nullptr;
                         uint16_t currentOffset = offset;
@@ -590,8 +598,10 @@ namespace Core {
                             containerLevelInfo->state = STATE_CONTAINER; // To maintain details for next level parsing
                             _element = element;
                         }
-                        containerLevelInfo->result = Deserialize(stream, maxLength, offset);
-                        if (containerLevelInfo->result == RESULT_FAILURE) {
+
+                        Deserialize(stream, maxLength, offset);
+                        if (_result == RESULT_FAILURE) {
+                            containerLevelInfo->result = _result;
                             finished = true;
                             break;
                         }
@@ -601,7 +611,7 @@ namespace Core {
 
                                 uint16_t size = ((offset > maxLength) ? (maxLength - currentOffset) : (offset - currentOffset));
                                 containerLevelInfo->value.append((const char*)stream + currentOffset, size);
-                                if (containerLevelInfo->result == RESULT_SUCCESS) {
+                                if (_result == RESULT_SUCCESS) {
 
                                     containerLevelInfo->childElement->DirectParser()->Deserialize(containerLevelInfo->value.c_str(), containerLevelInfo->value.length(), currentOffset, true);
                                     containerLevelInfo->value.clear();
@@ -610,10 +620,14 @@ namespace Core {
                             _element = containerLevelInfo->childElement;
                         }
 
-                        if (containerLevelInfo->result == RESULT_SUCCESS) {
-                            containerLevelInfo->state = STATE_NONE;
+                        if (_result == RESULT_SUCCESS) {
+                            containerLevelInfo->state = STATE_CONTAINER_VALUE;
+                            containerLevelInfo->result = _result = RESULT_INPROGRESS;
                         }
                         offset--; //Just point to the end position of previous parsing
+                    } else if (containerLevelInfo->state == STATE_VALUE) {
+                        containerLevelInfo->state = STATE_CONTAINER;
+                        offset--;
                     } else {
                         SetEnterBit(containerLevelInfo->scopeBit, containerLevelInfo->scopeCount);
                         if (stream[offset] == '[') {
@@ -644,7 +658,10 @@ namespace Core {
                     }
 
                     ResetEnterBit(containerLevelInfo->scopeBit, containerLevelInfo->scopeCount);
-                    continue;
+                    if (containerLevelInfo->state != STATE_VALUE) {
+                        containerLevelInfo->result = _result = RESULT_SUCCESS;
+                        continue;
+                    }
                 } else if (WhiteSpace(stream[offset])) {
                     // Skip whiteSpace.
                     continue;
@@ -655,8 +672,10 @@ namespace Core {
                         finished = true;
                         break;
                     }
-                    SetCommaBit(containerLevelInfo->scopeBit, containerLevelInfo->scopeCount);
-                    containerLevelInfo->result = RESULT_INPROGRESS;
+                    if ((containerLevelInfo->state != STATE_VALUE) && (containerLevelInfo->state != STATE_CONTAINER_VALUE)) {
+                        SetCommaBit(containerLevelInfo->scopeBit, containerLevelInfo->scopeCount);
+                        containerLevelInfo->result = RESULT_INPROGRESS;
+                    }
                 } else {
                     if (containerLevelInfo->state == STATE_NONE) {
                         if (IsSquareBracketSet(containerLevelInfo->scopeBit)) {
@@ -682,7 +701,9 @@ namespace Core {
                     while ((offset < maxLength) && (containerLevelInfo->state == STATE_KEY)) {
 
                         if (stream[offset] == ':') {
+
                             if (IsValidKey(containerLevelInfo->key) != true) {
+                                containerLevelInfo->result = RESULT_FAILURE;
                                 finished = true;
                                 break;
                             }
@@ -709,11 +730,13 @@ namespace Core {
                     }
                     break;
                 }
-                case STATE_VALUE: {
-                    while ((offset < maxLength) && (containerLevelInfo->state == STATE_VALUE)) {
+                case STATE_VALUE:
+                case STATE_CONTAINER_VALUE: {
+                    while ((offset < maxLength) && ((containerLevelInfo->state == STATE_VALUE) || (containerLevelInfo->state == STATE_CONTAINER_VALUE))) {
 
-                        if (((stream[offset] == ',') && (IsCompleteData(containerLevelInfo->value) == true)) || (ExitScope(stream[offset]))) {
-                            if (IsValidData(containerLevelInfo->value) != true) {
+                        if (((stream[offset] == ',') && ((IsCompleteData(containerLevelInfo->value) == true) || (containerLevelInfo->state == STATE_CONTAINER_VALUE))) || (ExitScope(stream[offset]))) {
+
+                            if (((containerLevelInfo->state == STATE_VALUE)) && IsValidData(containerLevelInfo->value) != true) {
                                 finished = true;
                                 containerLevelInfo->result = RESULT_FAILURE;
                                 break;
@@ -723,15 +746,17 @@ namespace Core {
                                 SetCommaBit(containerLevelInfo->scopeBit, containerLevelInfo->scopeCount);
                                 containerLevelInfo->result = RESULT_INPROGRESS; // Reset to indicate that we have to parse some more data.
                             } else {
-                                offset--;
                                 containerLevelInfo->result = RESULT_SUCCESS; // At the end of bracket.
+                                if (finished == false) {
+                                    offset--;
+                                }
                             }
 
                             if (IsDelimeterSet(containerLevelInfo->scopeBit)) {
                                 ResetDelimeterBit(containerLevelInfo->scopeBit, containerLevelInfo->scopeCount);
                             }
 
-                            containerLevelInfo->state = STATE_NONE;
+                            if (containerLevelInfo->state == STATE_VALUE){
                             if (containerLevelInfo->childElement != nullptr) {
                                 if (containerLevelInfo->childElement->Type() == PARSE_BUFFERED) {
                                     containerLevelInfo->childElement->BufferParser()->Deserialize(containerLevelInfo->value);
@@ -742,6 +767,8 @@ namespace Core {
                                     containerLevelInfo->result = RESULT_FAILURE;
                                 }
                             }
+                            }
+                            containerLevelInfo->state = STATE_NONE;
                             containerLevelInfo->value.clear();
                         } else {
                             containerLevelInfo->value += stream[offset];
@@ -758,21 +785,22 @@ namespace Core {
                 }
             }
 
-            Result result = containerLevelInfo->result;
+            bool status = true;
             if ((startOffset == 0) && (offset < maxLength) && (_containerLevel == 1)) {
-                result = RESULT_FAILURE; //Some more data remaining after JSON container format
+                status = false;
             }
-
-            if ((finished == true) && (containerLevelInfo->result != RESULT_INPROGRESS)) {
-                if (containerLevelInfo->scopeCount == 0) {
-                    result = RESULT_SUCCESS;
+            if (/*(containerLevelInfo->result == RESULT_FAILURE) ||*/ (finished == true) && (containerLevelInfo->result != RESULT_INPROGRESS)) {
+                if ((containerLevelInfo->scopeCount != 0) || (containerLevelInfo->result == RESULT_FAILURE)) {
+                    status = false;
                 }
                 _containerLevelMap.erase(_containerLevel);
                 delete containerLevelInfo;
             }
 
             _containerLevel--;
-            return (result);
+            _result = containerLevelInfo->result;
+
+            return (status);
         }
     }
 }
