@@ -33,7 +33,8 @@ namespace Exchange {
         struct IControl : virtual public Core::IUnknown {
             enum { ID = 0x00000018 };
 
-            struct IGeometry {
+            struct IGeometry : virtual public Core::IUnknown {
+                enum { ID = 0x00000019 };
 
                 struct Rectangle {
                     uint32_t X;
@@ -42,8 +43,13 @@ namespace Exchange {
                     uint32_t Height;
                 };
 
-                Rectangle window;
-                uint32_t zOrder;
+                virtual ~IGeometry() {}
+
+                virtual uint32_t X() const = 0;
+                virtual uint32_t Y() const = 0;
+                virtual uint32_t Z() const = 0;
+                virtual uint32_t Width() const = 0;
+                virtual uint32_t Height() const = 0;
             };
 
             struct ICallback : virtual public Core::IUnknown {
@@ -61,8 +67,8 @@ namespace Exchange {
             virtual void Position(const uint64_t absoluteTime) = 0;
             virtual uint64_t Position() const = 0;
             virtual void TimeRange(uint64_t& begin, uint64_t& end) const = 0;
-            virtual IGeometry Geometry() const = 0;
-            virtual void Geometry(const IGeometry settings) = 0;
+            virtual IGeometry* Geometry() const = 0;
+            virtual void Geometry(const IGeometry* settings) = 0;
             virtual void Callback(IControl::ICallback* callback) = 0;
         };
 
