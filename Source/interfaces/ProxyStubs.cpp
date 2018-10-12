@@ -2734,28 +2734,28 @@ namespace ProxyStubs {
         }
         virtual uint32_t Y() const
         {
-            IPCMessage newMessage(BaseClass::Message(2));
+            IPCMessage newMessage(BaseClass::Message(1));
             Invoke(newMessage);
 
             return (newMessage->Response().Reader().Number<uint32_t>());
         }
         virtual uint32_t Z() const
         {
-            IPCMessage newMessage(BaseClass::Message(4));
+            IPCMessage newMessage(BaseClass::Message(2));
             Invoke(newMessage);
 
             return (newMessage->Response().Reader().Number<uint32_t>());
         }
         virtual uint32_t Width() const
         {
-            IPCMessage newMessage(BaseClass::Message(6));
+            IPCMessage newMessage(BaseClass::Message(3));
             Invoke(newMessage);
 
             return (newMessage->Response().Reader().Number<uint32_t>());
         }
         virtual uint32_t Height() const
         {
-            IPCMessage newMessage(BaseClass::Message(8));
+            IPCMessage newMessage(BaseClass::Message(4));
             Invoke(newMessage);
 
             return (newMessage->Response().Reader().Number<uint32_t>());
