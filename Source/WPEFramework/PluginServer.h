@@ -924,6 +924,7 @@ namespace WPEFramework {
 
                 Unlock();
             }
+            virtual uint32_t Submit(const uint32_t id, const Core::ProxyType<Core::JSON::IElement>& response) override;
             virtual ISubSystem* SubSystems() override;
             virtual void Notify(const string& message) override;
             virtual void* QueryInterface(const uint32_t id) override;
@@ -941,6 +942,12 @@ namespace WPEFramework {
             virtual reason Reason() const
             {
                 return (_reason);
+            }
+            bool HasVersionSupport(const string& number) const {
+            
+                return (number.length() > 0) && 
+                       (std::all_of(number.begin(), number.end(), [](TCHAR c) { return std::isdigit(c); })) &&
+                       (Service::IsSupported(static_cast<uint8_t>(atoi(number.c_str()))));
             }
 
         private:
@@ -988,7 +995,7 @@ namespace WPEFramework {
                 const string locator(PluginHost::Service::Configuration().Locator.Value());
                 const string classNameString(PluginHost::Service::Configuration().ClassName.Value());
                 const TCHAR* className(classNameString.c_str());
-                uint32_t version(PluginHost::Service::Configuration().Version.IsSet() ? PluginHost::Service::Configuration().Version.Value() : static_cast<uint32_t>(~0));
+                uint32_t version(static_cast<uint32_t>(~0));
 
                 _moduleName.clear();
                 _versionHash.clear();
@@ -1471,6 +1478,9 @@ namespace WPEFramework {
             }
 
         public:
+            inline uint32_t Submit(const uint32_t id, const Core::ProxyType<Core::JSON::IElement>& response) {
+                return(_server.Dispatcher().Submit(id, response));
+            }
             inline uint32_t SubSystemInfo() const {
                 return (_subSystems.Value());
             }
@@ -1536,25 +1546,13 @@ namespace WPEFramework {
 
                 const string& callsign(name.empty() == true ? _server.ControllerName() : name);
 
-                _adminLock.Lock();
+                Core::ProxyType<Service> service;
 
-                std::map<const string, Core::ProxyType<Service> >::iterator index(_services.find(callsign));
+                FromIdentifier(callsign, service);
 
-                if (index == _services.end()) {
-                    _adminLock.Unlock();
-                }
-                else {
+                if (service.IsValid() == true) {
 
-                    Core::ProxyType<Service> service(index->second);
-
-                    _adminLock.Unlock();
-
-                    ASSERT(service.IsValid());
-
-                    if (service.IsValid() == true) {
-
-                        result = service->QueryInterface(id);
-                    }
+                    result = service->QueryInterface(id);
                 }
                 return (result);
             }
@@ -1644,22 +1642,6 @@ namespace WPEFramework {
             {
                 _server.Notification(message);
             }
-            inline Core::ProxyType<Service> FromLocator(const string& callSign)
-            {
-                Core::ProxyType<Service> result;
-
-                _adminLock.Lock();
-
-                std::map<const string, Core::ProxyType<Service> >::const_iterator index(_services.find(callSign));
-
-                if (index != _services.end()) {
-                    result = index->second;
-                }
-
-                _adminLock.Unlock();
-
-                return (result);
-            }
             void GetMetaData(Core::JSON::ArrayType<MetaData::Service>& metaData) const {
                 _adminLock.Lock();
 
@@ -1680,8 +1662,35 @@ namespace WPEFramework {
                     duplicates.pop_front();
                 }
             }
+            uint32_t FromIdentifier(const string& callSign, Core::ProxyType<Service>& service) {
+                uint32_t result = Core::ERROR_UNAVAILABLE;
 
-            Core::ProxyType<Service> FromLocator(const string& identifier, bool& correctHeader);
+                _adminLock.Lock();
+
+                std::map<const string, Core::ProxyType<Service> >::const_iterator index(_services.begin());
+
+                while ((index != _services.end()) && (result == Core::ERROR_UNAVAILABLE)) {
+                    const string& source(index->first);
+                    if (source.compare(0, source.length(), callSign) != 0) {
+                        index++;
+                    }
+                    else {
+                        result = Core::ERROR_INVALID_SIGNATURE;
+                        uint32_t length = source.length();
+
+                        if ((callSign.length() == length) ||
+                            ((callSign[length] == '.') && (index->second->HasVersionSupport(callSign.substr(length+1))))) {
+                            service = index->second;
+                            result = Core::ERROR_NONE;
+                        }
+                    }
+                }
+
+                _adminLock.Unlock();
+
+                return (result);
+            }
+            uint32_t FromLocator(const string& identifier, Core::ProxyType<Service>& service);
 
             void Destroy();
 
@@ -1962,6 +1971,9 @@ namespace WPEFramework {
 
                 _missingCallsign->ErrorCode = Web::STATUS_BAD_REQUEST;
                 _missingCallsign->Message = _T("After the /") + serverPrefix + _T("/ URL a Callsign is expected.");
+
+                _incorrectVersion->ErrorCode = Web::STATUS_BAD_REQUEST;
+                _incorrectVersion->Message = _T("Callsign was oke, but the requested version was not supported.");
             }
 
         private:
@@ -1974,11 +1986,11 @@ namespace WPEFramework {
                 TRACE(WebFlow, (Core::proxy_cast<Web::Request>(request)));
 
                 // Remember the path and options..
-                bool correctHeader;
+                Core::ProxyType<Service> service;
 
-                Core::ProxyType<Service> service(_parent.Services().FromLocator(request->Path, correctHeader));
+                uint32_t status = _parent.Services().FromLocator(request->Path, service);
 
-                request->Service(correctHeader, Core::proxy_cast<PluginHost::Service>(service));
+                request->Service(status, Core::proxy_cast<PluginHost::Service>(service));
 
                 ASSERT(request->State() != Request::INCOMPLETE);
 
@@ -1994,11 +2006,11 @@ namespace WPEFramework {
 
                 // If there was no body, we are still incomplete.
                 if (request->State() == Request::INCOMPLETE) {
-                    bool correctHeader;
 
-                    Core::ProxyType<Service> service(_parent.Services().FromLocator(request->Path, correctHeader));
+                    Core::ProxyType<Service> service;
+                    uint32_t status = _parent.Services().FromLocator(request->Path, service);
 
-                    request->Service(correctHeader, Core::proxy_cast<PluginHost::Service>(service));
+                    request->Service(status, Core::proxy_cast<PluginHost::Service>(service));
                 }
 
                 switch (request->State()) {
@@ -2021,6 +2033,11 @@ namespace WPEFramework {
                 case Request::MISSING_CALLSIGN: {
                     // Report that we, at least, need a call sign.
                     Submit(_missingCallsign);
+                    break;
+                }
+                case Request::INVALID_VERSION: {
+                    // Report that we, at least, need a call sign.
+                    Submit(_incorrectVersion);
                     break;
                 }
                 case Request::COMPLETE: {
@@ -2158,10 +2175,10 @@ namespace WPEFramework {
                 }
                 else if (IsWebSocket() == true) {
                     ASSERT(_service.IsValid() == false);
-                    bool correctHeader;
 
                     // see if we need to subscribe...
-                    _service = _parent.Services().FromLocator(Path(), correctHeader);
+                    _parent.Services().FromLocator(Path(), _service);
+
                     if ((_service.IsValid() == true) && (Name().length() > _service->WebPrefix().length())) {
                         Properties(_service->WebPrefix().length() + 1);
                     }
@@ -2213,6 +2230,10 @@ namespace WPEFramework {
             // If there is no call sign or the associated handler does not exist,
             // we can return a proper answer, without dispatching.
             static Core::ProxyType<Web::Response> _missingCallsign;
+
+            // If there is a call sign but the version request is not avilable,
+            // we can return a proper answer, without dispatching.
+            static Core::ProxyType<Web::Response> _incorrectVersion;
         };
         class EXTERNAL ChannelMap : public Core::SocketServerType<Channel> {
         private:
