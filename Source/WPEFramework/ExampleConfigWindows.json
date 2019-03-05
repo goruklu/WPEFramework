@@ -3,11 +3,11 @@
   "binding": "0.0.0.0",
   "idletime": 60,
   "ipv6": false,
-  "persistentpath": "C:/work/WPEFrameworkPlugins/artifacts/Persistent",
-  "volatilepath": "C:/work/WPEFramework/artifacts/temp",
-  "datapath": "C:/work/WPEFrameworkPlugins/artifacts/Data",
-  "systempath": "C:/work/WPEFrameworkPlugins/artifacts/Debug",
-  "proxystubpath": "C:/work/WPEFramework/artifacts/Debugproxystubs",
+  "persistentpath": "c:/work/WPEFrameworkPlugins/artifacts/Persistent",
+  "volatilepath": "c:/work/WPEFramework/artifacts/temp",
+  "datapath": "c:/work/WPEFrameworkPlugins/artifacts/Debug",
+  "systempath": "c:/work/WPEFrameworkPlugins/artifacts/Debug",
+  "proxystubpath": "c:/work/WPEFramework/artifacts/Debugproxystubs",
   "communicator": "127.0.0.1:7812",
   "redirect": "Service/Controller/UI",
   "plugins": [
@@ -23,6 +23,12 @@
           "default": "WebKitBrowser"
         }
       }
+    },
+    {
+      "callsign": "JSONRPCExamplePlugin",
+      "locator": "libJSONRPCExamplePlugin.so",
+      "classname": "JSONRPCExamplePlugin",
+      "autostart": true
     },
     {
       "callsign": "WebServer",
