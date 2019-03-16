@@ -32,3 +32,5 @@ workspace/
 /Source/protocols
 *.user
 /artifacts/Release
+/artifacts
+/Source/.vs
