@@ -1,4 +1,5 @@
 #include "PluginServer.h"
+// #include "Portability.h"
 
 #ifndef __WIN32__
 #include <dlfcn.h> // for dladdr
@@ -52,55 +53,6 @@ namespace PluginHost {
         }
     };
 
-    class SecurityOptions : public ISecurity {
-    private:
-        SecurityOptions(const SecurityOptions&);
-        SecurityOptions& operator=(const SecurityOptions&);
-
-    public:
-        SecurityOptions()
-        {
-        }
-        ~SecurityOptions()
-        {
-        }
-
-    public:
-        // Allow a request to be checked before it is offered for processing.
-        virtual bool Allowed(const Web::Request& /* request */) override
-        {
-            // Regardless of the WebAgent, there is no differnt priocessing and we allow it :-)
-            return (true);
-        }
-
-        // What options are allowed to be passed to this service???
-        virtual Core::ProxyType<Web::Response> Options(const Web::Request& request) override
-        {
-            Core::ProxyType<Web::Response> result(PluginHost::Factories::Instance().Response());
-
-            TRACE_L1("Filling the Options on behalf of: %s", request.Path.c_str());
-            result->ErrorCode = Web::STATUS_NO_CONTENT;
-            result->Message = _T("No Content"); // Core::EnumerateType<Web::WebStatus>(_optionResponse->ErrorCode).Text();
-            result->Allowed = request.AccessControlMethod.Value();
-            result->AccessControlMethod = Request::HTTP_GET | Request::HTTP_POST | Request::HTTP_PUT | Request::HTTP_DELETE;
-            result->AccessControlOrigin = _T("*");
-            result->AccessControlHeaders = _T("Content-Type");
-
-            // This will last for an hour, try again after an hour :-)
-            result->AccessControlMaxAge = 60 * 60;
-
-            result->Date = Core::Time::Now();
-
-            return (result);
-        }
-
-        //  IUnknown methods
-        // -------------------------------------------------------------------------------------------------------
-        BEGIN_INTERFACE_MAP(SecurityOptions)
-        INTERFACE_ENTRY(ISecurity)
-        END_INTERFACE_MAP
-    };
-
     extern "C" {
 
 #ifndef __WIN32__
@@ -116,6 +68,11 @@ namespace PluginHost {
 
         if (signo == SIGTERM) {
             g_QuitEvent.SetEvent();
+        } else if (signo == SIGSEGV) {
+            DumpCallStack();
+            // now invoke the default segfault handler
+            signal(signo, SIG_DFL);
+            kill(getpid(), signo);
         }
     }
 #endif
@@ -168,9 +125,12 @@ namespace PluginHost {
                     pluginConfig.FromFile(file);
                     file.Close();
 
-                    if ((pluginConfig.ClassName.Value().empty() == true) || (pluginConfig.Locator.Value().empty() == true)) {
+                    if ((pluginConfig.ClassName.Value().empty() == true) || (pluginConfig.Locator.Value().empty() == true))
+                    {
                         SYSLOG(Logging::Startup, (_T("Plugin config file [%s] does not contain classname or locator."), file.Name().c_str()));
-                    } else {
+                    }
+                    else
+                    {
                         if (pluginConfig.Callsign.Value().empty() == true) {
                             pluginConfig.Callsign = Core::File::FileName(file.FileName());
                         }
@@ -301,11 +261,13 @@ namespace PluginHost {
         else {
             struct sigaction sa;
             memset(&sa, 0, sizeof(struct sigaction));
+            sigemptyset(&sa.sa_mask);
             sa.sa_handler = ExitDaemonHandler;
             sa.sa_flags = 0; // not SA_RESTART!;
 
             sigaction(SIGINT, &sa, nullptr);
             sigaction(SIGTERM, &sa, nullptr);
+            sigaction(SIGSEGV, &sa, nullptr);
         }
 
         if (_background == true) {
@@ -376,17 +338,10 @@ namespace PluginHost {
         const string tracePath(serviceConfig.VolatilePath.Value());
         Trace::TraceUnit::Instance().Open(tracePath);
 
-        // Time to open up the LOG tracings by default.
-        Trace::TraceType<Logging::Startup, &Logging::MODULE_LOGGING>::Enable(true);
-        Trace::TraceType<Logging::Shutdown, &Logging::MODULE_LOGGING>::Enable(true);
-        Trace::TraceType<Logging::Notification, &Logging::MODULE_LOGGING>::Enable(true);
-
         Trace::TraceUnit::Instance().SetDefaultCategoriesJson(serviceConfig.DefaultTraceCategories.Value());
 
         // Set the path for the out-of-process thingies
         Core::SystemInfo::SetEnvironment(TRACE_CYCLIC_BUFFER_ENVIRONMENT, tracePath);
-
-        ISecurity* securityOptions = Core::Service<SecurityOptions>::Create<ISecurity>();
 
         SYSLOG(Logging::Startup, (_T(EXPAND_AND_QUOTE(APPLICATION_NAME))));
         SYSLOG(Logging::Startup, (_T("Starting time: %s"), Core::Time::Now().ToRFC1123(false).c_str()));
@@ -418,10 +373,7 @@ namespace PluginHost {
         LoadPlugins(pluginPath, serviceConfig);
 
         // Startup/load/initialize what we found in the configuration.
-        _dispatcher = new PluginHost::Server(serviceConfig, securityOptions, _background);
-
-        // We don't need it anymore..
-        securityOptions->Release();
+        _dispatcher = new PluginHost::Server(serviceConfig, _background);
 
         SYSLOG(Logging::Startup, (_T(EXPAND_AND_QUOTE(APPLICATION_NAME) " actively listening.")));
 
@@ -511,6 +463,9 @@ namespace PluginHost {
                         printf("Platform:     %s\n",
                             (status->IsActive(PluginHost::ISubSystem::PLATFORM) == true) ? "Available"
                                                                                          : "Unavailable");
+                        printf("Security:     %s\n",
+                            (status->IsActive(PluginHost::ISubSystem::SECURITY) == true) ? "Available"
+                                                                                         : "Unavailable");
                         printf("Network:      %s\n",
                             (status->IsActive(PluginHost::ISubSystem::NETWORK) == true) ? "Available"
                                                                                         : "Unavailable");
@@ -538,11 +493,9 @@ namespace PluginHost {
                         printf("WebSource:    %s\n",
                             (status->IsActive(PluginHost::ISubSystem::WEBSOURCE) == true) ? "Available"
                                                                                           : "Unavailable");
-
                         printf("Streaming:    %s\n",
                             (status->IsActive(PluginHost::ISubSystem::STREAMING) == true) ? "Available"
                                                                                           : "Unavailable");
-
                         printf("------------------------------------------------------------\n");
                         if (status->IsActive(PluginHost::ISubSystem::INTERNET) == true) {
                             printf("Network Type: %s\n",

@@ -63,11 +63,6 @@ namespace ProxyStub {
         {
             INTERFACE* result = reinterpret_cast<INTERFACE*>(incomingData);
 
-            //if (result == nullptr) {
-
-            //	result = reinterpret_cast<INTERFACE*>(incomingData);
-            //}
-
             return (result);
         }
         virtual void Handle(const uint16_t index, Core::ProxyType<Core::IPCChannel>& channel, Core::ProxyType<RPC::InvokeMessage>& message)
@@ -111,6 +106,7 @@ namespace ProxyStub {
             : _remoteAddRef(remoteRefCounted ? REGISTERED : UNREGISTERED)
             , _refCount(remoteRefCounted ? 1 : 0)
             , _interfaceId(interfaceId)
+            , _releaseCount(1)
             , _implementation(implementation)
             , _channel(channel)
             , _parent(*parent)
@@ -121,6 +117,11 @@ namespace ProxyStub {
         }
 
     public:
+        inline void AddRefCachedCount() {
+            if ((_remoteAddRef.load() & REGISTERED) != 0) {
+                _releaseCount++;
+            }
+        }
         inline uint32_t Release()
         {
             return (_parent.Release());
@@ -235,8 +236,6 @@ namespace ProxyStub {
                 RPC::Administrator::Instance().UnregisterProxy(*this);
             }
 
-            /// Next Release should destruct this. We are to be destructed!!!
-            _refCount = 1;
             return (_parent.Release());
         }
         void RemoteRelease() const
@@ -246,6 +245,7 @@ namespace ProxyStub {
             Core::ProxyType<RPC::InvokeMessage> message(RPC::Administrator::Instance().Message());
 
             message->Parameters().Set(_implementation, _interfaceId, 1);
+            message->Parameters().Writer().Number<uint32_t>(_releaseCount.load());
 
             // Just try the destruction for few Seconds...
             uint32_t result = Invoke(message, RPC::CommunicationTimeOut);
@@ -282,6 +282,7 @@ namespace ProxyStub {
         mutable std::atomic<uint8_t> _remoteAddRef;
         mutable uint32_t _refCount;
         const uint32_t _interfaceId;
+        std::atomic<uint32_t> _releaseCount;
         void* _implementation;
         mutable Core::ProxyType<Core::IPCChannel> _channel;
         Core::IUnknown& _parent;

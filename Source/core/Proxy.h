@@ -162,7 +162,7 @@ namespace Core {
 
             ASSERT(m_RefCount == 0);
 
-            TRACE_L5("Destructor ProxyObject <0x%X>", TRACE_POINTER(this));
+            TRACE_L5("Destructor ProxyObject <%p>", (this));
         }
 
     public:
@@ -487,11 +487,6 @@ namespace Core {
         {
             CONTEXT* result(dynamic_cast<CONTEXT*>(source.operator->()));
 
-            // Although the constructor was called under the assumption that the object could be
-            // casted. It can *NOT* be casted, if we get a nullptr. Please fix your casting request
-            // that caused this assert !!!
-            ASSERT(result != nullptr);
-
             if (result == nullptr) {
                 m_RefCount = nullptr;
             } else {
@@ -772,12 +767,12 @@ namespace Core {
             // A highwatermark of 0 is bullshit.
             ASSERT(a_HighWaterMark != 0);
 
-            TRACE_L5("Constructor ProxyQueue <0x%X>", TRACE_POINTER(this));
+            TRACE_L5("Constructor ProxyQueue <%p>", (this));
         }
 
         ~ProxyQueue()
         {
-            TRACE_L5("Destructor ProxyQueue <0x%X>", TRACE_POINTER(this));
+            TRACE_L5("Destructor ProxyQueue <%p>", (this));
 
             // Disable the queue and flush all entries.
             Disable();

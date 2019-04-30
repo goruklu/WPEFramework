@@ -1,0 +1,537 @@
+{
+  "$schema": "interface.schema.json",
+  "jsonrpc": "2.0",
+  "info": {
+    "title": "Remote Control API",
+    "class": "RemoteControl",
+    "description": "RemoteControl JSON-RPC interface"
+  },
+  "common": {
+    "$ref": "common.json"
+  },
+  "definitions": {
+    "rcinfo": {
+      "type": "object",
+      "properties": {
+        "device": {
+          "description": "Device name",
+          "type": "string",
+          "default": "DevInput"
+        },
+        "code": {
+          "description": "Key code",
+          "type": "number",
+          "default": 1
+        },
+        "key": {
+          "description": "Key ingest code",
+          "type": "number",
+          "size": 16,
+          "default": 103
+        },
+        "modifiers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "leftshift",
+              "rightshift",
+              "leftalt",
+              "rightalt",
+              "leftctrl",
+              "rightctrl"
+            ],
+            "enumvalues": [
+              1,
+              2,
+              4,
+              8,
+              16,
+              32
+            ],
+            "description": "Key modifiers",
+            "default": "leftshift"
+          }
+        }
+      },
+      "required": [
+        "device",
+        "code",
+        "key",
+        "modifiers"
+      ]
+    }
+  },
+  "methods": {
+    "RemoteControl.1.devices": {
+      "summary": "General information.",
+      "description": "Retrieves the names of all available devices.",
+      "result": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "description": "Available device name",
+          "default": "Web"
+        }
+      }
+    },
+    "RemoteControl.1.device": {
+      "summary": "Get device.",
+      "description": "Retrieves the metadata of specific devices.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "description": "Device name",
+            "type": "string",
+            "default": "DevInput"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "description": "Device name",
+            "type": "string",
+            "default": "DevInput"
+          },
+          "metadata": {
+            "description": "Device metadata",
+            "type": "string",
+            "default": "It is based on protocol A"
+          }
+        },
+        "required": [
+          "name",
+          "metadata"
+        ]
+      },
+      "errors": [
+        {
+          "description": "Virtual device is loaded",
+          "$ref": "#/common/errors/general"
+        },
+        {
+          "description": "Unknown device",
+          "$ref": "#/common/errors/unavailable"
+        },
+        {
+          "description": "Bad JSON param data format",
+          "$ref": "#/common/errors/badrequest"
+        }
+      ]
+    },
+    "RemoteControl.1.key": {
+      "summary": "Key action.",
+      "description": "Retrieves the key code details.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "description": "Device name",
+            "type": "string",
+            "default": "DevInput"
+          },
+          "code": {
+            "description": "Key code",
+            "type": "number",
+            "default": 1
+          }
+        },
+        "required": [
+          "device",
+          "code"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "description": "Key code",
+            "type": "number",
+            "default": 1
+          },
+          "key": {
+            "description": "Key ingest code",
+            "type": "number",
+            "size": 16,
+            "default": 103
+          },
+          "modifiers": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "leftshift",
+                "rightshift",
+                "leftalt",
+                "rightalt",
+                "leftctrl",
+                "rightctrl"
+              ],
+              "enumvalues": [
+                1,
+                2,
+                4,
+                8,
+                16,
+                32
+              ],
+              "description": "Key modifiers",
+              "default": "leftshift"
+            }
+          }
+        },
+        "required": [
+          "code",
+          "key",
+          "modifiers"
+        ]
+      },
+      "errors": [
+        {
+          "description": "Key does not exist",
+          "$ref": "#/common/errors/unknownkey"
+        },
+        {
+          "description": "Unknown device",
+          "$ref": "#/common/errors/unavailable"
+        },
+        {
+          "description": "Bad JSON param data format",
+          "$ref": "#/common/errors/badrequest"
+        }
+      ]
+    },
+    "RemoteControl.1.delete": {
+      "summary": "Key mapping actions.",
+      "description": "Deletes the key code from map.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "description": "Device name",
+            "type": "string",
+            "default": "DevInput"
+          },
+          "code": {
+            "description": "Key code",
+            "type": "number",
+            "default": 1
+          }
+        },
+        "required": [
+          "device",
+          "code"
+        ]
+      },
+      "result": {
+        "$ref": "#/common/results/void"
+      },
+      "errors": [
+        {
+          "description": "Key does not exist",
+          "$ref": "#/common/errors/unknownkey"
+        },
+        {
+          "description": "Unknown device",
+          "$ref": "#/common/errors/unavailable"
+        },
+        {
+          "description": "Bad JSON param data format",
+          "$ref": "#/common/errors/badrequest"
+        }
+      ]
+    },
+    "RemoteControl.1.modify": {
+      "summary": "Key mapping actions.",
+      "description": "Modifies the key code in the map.",
+      "params": {
+        "$ref": "#/definitions/rcinfo"
+      },
+      "result": {
+        "$ref": "#/common/results/void"
+      },
+      "errors": [
+        {
+          "description": "Unknown device",
+          "$ref": "#/common/errors/unavailable"
+        },
+        {
+          "description": "Bad JSON param data format",
+          "$ref": "#/common/errors/badrequest"
+        },
+        {
+          "description": "Key does not exist",
+          "$ref": "#/common/errors/unknownkey"
+        }
+      ]
+    },
+    "RemoteControl.1.pair": {
+      "summary": "Pairing device.",
+      "description": "Activates pairing mode of specific device.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "description": "Device name",
+            "type": "string",
+            "default": "DevInput"
+          }
+        }
+      },
+      "result": {
+        "$ref": "#/common/results/void"
+      },
+      "errors": [
+        {
+          "description": "Unknown device",
+          "$ref": "#/common/errors/unavailable"
+        },
+        {
+          "description": "Failed to activate pairing",
+          "$ref": "#/common/errors/general"
+        },
+        {
+          "description": "Bad JSON param data format",
+          "$ref": "#/common/errors/badrequest"
+        }
+      ]
+    },
+    "RemoteControl.1.unpair": {
+      "summary": "Pairing device.",
+      "description": "Unpairs of specific device.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "description": "Device name",
+            "type": "string",
+            "default": "DevInput"
+          },
+          "bindid": {
+            "description": "Binding id",
+            "type": "string",
+            "default": "id"
+          }
+        },
+        "required": [
+          "device",
+          "bindid"
+        ]
+      },
+      "result": {
+        "$ref": "#/common/results/void"
+      },
+      "errors": [
+        {
+          "description": "Unknown device",
+          "$ref": "#/common/errors/unavailable"
+        },
+        {
+          "description": "Failed to unpair a specific device",
+          "$ref": "#/common/errors/general"
+        },
+        {
+          "description": "Bad JSON param data format",
+          "$ref": "#/common/errors/badrequest"
+        }
+      ]
+    },
+    "RemoteControl.1.send": {
+      "summary": "Key mapping actions.",
+      "description": "Sends a code to a device.",
+      "params": {
+        "$ref": "#/definitions/rcinfo"
+      },
+      "result": {
+        "$ref": "#/common/results/void"
+      },
+      "errors": [
+        {
+          "description": "Unknown device",
+          "$ref": "#/common/errors/unavailable"
+        },
+        {
+          "description": "Bad JSON param data format",
+          "$ref": "#/common/errors/badrequest"
+        },
+        {
+          "description": "Key does not exist",
+          "$ref": "#/common/errors/unknownkey"
+        },
+        {
+          "description": "Key map table does not exist",
+          "$ref": "#/common/errors/unknowntable"
+        },
+        {
+          "description": "Key is already releases",
+          "$ref": "#/common/errors/alreadyreleased"
+        }
+      ]
+    },
+    "RemoteControl.1.press": {
+      "summary": "Key mapping actions.",
+      "description": "Sends a code 'Press' to a device.",
+      "params": {
+        "$ref": "#/definitions/rcinfo"
+      },
+      "result": {
+        "$ref": "#/common/results/void"
+      },
+      "errors": [
+        {
+          "description": "Unknown device",
+          "$ref": "#/common/errors/unavailable"
+        },
+        {
+          "description": "Bad JSON param data format",
+          "$ref": "#/common/errors/badrequest"
+        },
+        {
+          "description": "Key does not exist",
+          "$ref": "#/common/errors/unknownkey"
+        },
+        {
+          "description": "Key map table does not exist",
+          "$ref": "#/common/errors/unknowntable"
+        },
+        {
+          "description": "Key is already releases",
+          "$ref": "#/common/errors/alreadyreleased"
+        }
+      ]
+    },
+    "RemoteControl.1.release": {
+      "summary": "Key mapping actions.",
+      "description": "Sends a code 'Release' to a device.",
+      "params": {
+        "$ref": "#/definitions/rcinfo"
+      },
+      "result": {
+        "$ref": "#/common/results/void"
+      },
+      "errors": [
+        {
+          "description": "Unknown device",
+          "$ref": "#/common/errors/unavailable"
+        },
+        {
+          "description": "Bad JSON param data format",
+          "$ref": "#/common/errors/badrequest"
+        },
+        {
+          "description": "Key does not exist",
+          "$ref": "#/common/errors/unknownkey"
+        },
+        {
+          "description": "Key map table does not exist",
+          "$ref": "#/common/errors/unknowntable"
+        },
+        {
+          "description": "Key is already releases",
+          "$ref": "#/common/errors/alreadyreleased"
+        }
+      ]
+    },
+    "RemoteControl.1.save": {
+      "summary": "Key mapping actions.",
+      "description": "Saves the loaded key map as DEVICE_NAME.json into persistent path.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "description": "Device name",
+            "type": "string",
+            "default": "DevInput"
+          }
+        }
+      },
+      "result": {
+        "$ref": "#/common/results/void"
+      },
+      "errors": [
+        {
+          "description": "Unknown device",
+          "$ref": "#/common/errors/unavailable"
+        },
+        {
+          "description": "File is not created",
+          "$ref": "#/common/errors/general"
+        },
+        {
+          "description": "Bad JSON param data format",
+          "$ref": "#/common/errors/badrequest"
+        },
+        {
+          "description": "Illegal state",
+          "$ref": "#/common/errors/illegalstate"
+        }
+      ]
+    },
+    "RemoteControl.1.load": {
+      "summary": "Key mapping actions.",
+      "description": "Re-loads DEVICE_NAME.json key map into memory.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "description": "Device name",
+            "type": "string",
+            "default": "DevInput"
+          }
+        }
+      },
+      "result": {
+        "$ref": "#/common/results/void"
+      },
+      "errors": [
+        {
+          "description": "Unknown device",
+          "$ref": "#/common/errors/unavailable"
+        },
+        {
+          "description": "File does not exist",
+          "$ref": "#/common/errors/general"
+        },
+        {
+          "description": "Bad JSON param data format",
+          "$ref": "#/common/errors/badrequest"
+        },
+        {
+          "description": "Illegal state",
+          "$ref": "#/common/errors/illegalstate"
+        },
+        {
+          "description": "Opening failed",
+          "$ref": "#/common/errors/openfailed"
+        }
+      ]
+    },
+    "RemoteControl.1.add": {
+      "summary": "Key mapping actions.",
+      "description": "Adds the key code in the map.",
+      "params": {
+        "$ref": "#/definitions/rcinfo"
+      },
+      "result": {
+        "$ref": "#/common/results/void"
+      },
+      "errors": [
+        {
+          "description": "Unknown device",
+          "$ref": "#/common/errors/unavailable"
+        },
+        {
+          "description": "Bad JSON param data format",
+          "$ref": "#/common/errors/badrequest"
+        },
+        {
+          "description": "Code already exists",
+          "$ref": "#/common/errors/unknownkey"
+        }
+      ]
+    }
+  }
+}

@@ -9,10 +9,12 @@ namespace WPEFramework {
 namespace Exchange {
 
     struct IStream : virtual public Core::IUnknown {
-        enum { ID = 0x00000016 };
+        enum { ID = ID_STREAM };
 
         enum state {
-            NotAvailable = 0,
+            Idle = 0,
+            Loading,
+            Prepared,
             Paused,
             Playing,
             Error
@@ -31,15 +33,14 @@ namespace Exchange {
         };
 
         struct IControl : virtual public Core::IUnknown {
-            enum { ID = 0x00000018 };
+            enum { ID = ID_STREAM_CONTROL };
 
             struct IGeometry : virtual public Core::IUnknown {
-                enum { ID = 0x00000019 };
+                enum { ID = ID_STREAM_CONTROL_GEOMETRY };
 
                 virtual ~IGeometry() {}
 
                 virtual uint32_t X() const = 0;
-                ;
                 virtual uint32_t Y() const = 0;
                 virtual uint32_t Z() const = 0;
                 virtual uint32_t Width() const = 0;
@@ -47,11 +48,11 @@ namespace Exchange {
             };
 
             struct ICallback : virtual public Core::IUnknown {
-                enum { ID = 0x0000001A };
+                enum { ID = ID_STREAM_CONTROL_CALLBACK };
 
                 virtual ~ICallback() {}
 
-                virtual void TimeUpdate(uint64_t position) = 0;
+                virtual void TimeUpdate(const uint64_t position) = 0;
             };
 
             virtual ~IControl(){};
@@ -67,12 +68,12 @@ namespace Exchange {
         };
 
         struct ICallback : virtual public Core::IUnknown {
-            enum { ID = 0x00000017 };
+            enum { ID = ID_STREAM_CALLBACK };
 
             virtual ~ICallback() {}
 
-            virtual void DRM(uint32_t state) = 0;
-            virtual void StateChange(state newState) = 0;
+            virtual void DRM(const uint32_t state) = 0;
+            virtual void StateChange(const state newState) = 0;
         };
 
         virtual ~IStream() {}
@@ -83,14 +84,14 @@ namespace Exchange {
         virtual IControl* Control() = 0;
         virtual void Callback(IStream::ICallback* callback) = 0;
         virtual state State() const = 0;
-        virtual uint32_t Load(std::string configuration) = 0;
+        virtual uint32_t Load(const std::string& configuration) = 0;
     };
 
     struct IPlayer : virtual public Core::IUnknown {
-        enum { ID = 0x00000015 };
+        enum { ID = ID_PLAYER };
 
         virtual ~IPlayer() {}
-        virtual IStream* CreateStream(IStream::streamtype streamType) = 0;
+        virtual IStream* CreateStream(const IStream::streamtype streamType) = 0;
         virtual uint32_t Configure(PluginHost::IShell* service) = 0;
     };
 } // namespace Exchange

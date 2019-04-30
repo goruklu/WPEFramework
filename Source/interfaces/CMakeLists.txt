@@ -2,68 +2,17 @@ set(TargetMarshalling ${NAMESPACE}Marshallings)
 set(TargetInterfaces ${NAMESPACE}Interfaces)
 string(TOLOWER ${NAMESPACE} NAMESPACE_LIB)
 
-add_library(${TargetMarshalling} SHARED
-        ProxyStubs.cpp
-        ProxyStubs_AVNClient.cpp
-        ProxyStubs_Browser.cpp
-        ProxyStubs_Composition.cpp
-        ProxyStubs_ContentDecryption.cpp
-        ProxyStubs_DsgccClient.cpp
-        ProxyStubs_Guide.cpp
-        ProxyStubs_Netflix.cpp
-        ProxyStubs_Packager.cpp
-        ProxyStubs_PlayGiga.cpp
-        ProxyStubs_Provisioning.cpp
-        ProxyStubs_RPCLink.cpp
-        ProxyStubs_RtspClient.cpp
-        ProxyStubs_Streaming.cpp
-        ProxyStubs_TestController.cpp
-        ProxyStubs_TVControl.cpp
-        ProxyStubs_WebDriver.cpp
-        ProxyStubs_WebServer.cpp
-        ProxyStubs_TestUtility.cpp
-        )
+file(GLOB PUBLIC_HEADERS I*.h)
+file(GLOB JSON_DATA_HEADERS json/JsonData*.h)
+file(GLOB PROXY_STUB_SOURCES ProxyStubs*.cpp)
+
+list(APPEND PUBLIC_HEADERS Module.h)
+
+add_library(${TargetMarshalling} SHARED ${PROXY_STUB_SOURCES})
 
 add_library(${TargetInterfaces} SHARED
         Enumerations.cpp
-        )
-
-set(PUBLIC_HEADERS
-        IAVNClient.h
-        IBluetooth.h
-        IBrowser.h
-        ICapture.h
-        ICommand.h
-        IComposition.h
-        IContentDecryption.h
-        Ids.h
-        IDictionary.h
-        IDRM.h
-        IDsgccClient.h
-        IExternal.h
-        IGuide.h
-        IIPNetwork.h
-        IKeyHandler.h
-        IMemory.h
-        INetflix.h
-        IPackager.h
-        IPlayGiga.h
-        IPower.h
-        IProvisioning.h
-        IRPCLink.h
-        IStreaming.h
-        ISwitchBoard.h
-        ISystemCommands.h
-        ITimeSync.h
-        ITVControl.h
-        ITVPlatform.h
-        IVoiceHandler.h
-        IRtspClient.h
-        IWebDriver.h
-        IWebServer.h
-        ITestController.h
-        ITestUtility.h
-        Module.h
+        json/Enumerations.cpp
         )
 
 target_link_libraries(${TargetMarshalling}
@@ -128,6 +77,11 @@ install(
 install(
         TARGETS ${TargetMarshalling} EXPORT ${TargetMarshalling}Targets  # for downstream dependencies
         LIBRARY DESTINATION lib/${NAMESPACE_LIB}/proxystubs COMPONENT libs      # shared lib
+)
+
+install(
+        FILES ${JSON_DATA_HEADERS}
+        DESTINATION include/${NAMESPACE}/interfaces/json
 )
 
 InstallPackageConfig(

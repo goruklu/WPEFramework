@@ -24,8 +24,6 @@
 #endif
 #endif
 
-#define TRACE_POINTER(x) reinterpret_cast<unsigned long>(x)
-
 #if _TRACE_LEVEL > 4
 #define TRACE_L5(x, ...)                                                         \
     fprintf(stderr, "----- L5 [%d]: " #x "\n", TRACE_PROCESS_ID, ##__VA_ARGS__); \
@@ -80,7 +78,7 @@
         if (!(x)) {                                                                                         \
             ASSERT_LOGGER("===== $$ [%d]: ASSERT [%s:%d] (" #x ")\n", TRACE_PROCESS_ID, __FILE__, __LINE__) \
             DumpCallStack();                                                                                \
-            assert(x);                                                                                      \
+            exit(1);                                                                                        \
         }                                                                                                   \
     }
 
@@ -89,7 +87,7 @@
         if (!(x)) {                                                                                                                         \
             ASSERT_LOGGER("===== $$ [%d]: ASSERT [%s:%d] (" #x ")\n         " #y "\n", TRACE_PROCESS_ID, __FILE__, __LINE__, ##__VA_ARGS__) \
             DumpCallStack();                                                                                                                \
-            assert(x);                                                                                                                      \
+            exit(1);                                                                                                                      \
         }                                                                                                                                   \
     }
 

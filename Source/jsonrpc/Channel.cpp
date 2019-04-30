@@ -6,10 +6,14 @@ namespace JSONRPC {
 
     /* static */ Channel::FactoryImpl& Channel::FactoryImpl::Instance()
     {
-        static FactoryImpl _singleton;
+        static FactoryImpl& _singleton = Core::SingletonType<FactoryImpl>::Instance();
 
         return (_singleton);
     }
+
+	uint64_t Channel::FactoryImpl::WatchDog::Timed(const uint64_t /* scheduledTime */) {
+        return (_client->Timed());
+	}
 
     class ChannelProxy : public Core::ProxyObject<Channel> {
     private:
